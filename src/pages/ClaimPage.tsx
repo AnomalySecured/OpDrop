@@ -26,18 +26,14 @@ interface ClaimableAirdrop {
 export function ClaimPage({ network, dropOpAddress, walletAddress, isConnected, onConnect }: ClaimPageProps) {
     const [airdrops, setAirdrops] = useState<ClaimableAirdrop[]>([]);
     const [scanning, setScanning] = useState(false);
-    const [claimingId, setClaimingId] = useState<bigint | null>(null);
-    const [claimedIds, setClaimedIds] = useState<Set<string>>(new Set());
-    const [claimSuccess, setClaimSuccess] = useState<string | null>(null);
-
-    // Manual claim fields
-    const [manualId, setManualId] = useState('');
+    const [expandedId, setExpandedId] = useState<string | null>(null);
     const [recipientList, setRecipientList] = useState('');
-    const [manualError, setManualError] = useState<string | null>(null);
+    const [claimError, setClaimError] = useState<string | null>(null);
+    const [claimSuccess, setClaimSuccess] = useState<string | null>(null);
+    const [claimedIds, setClaimedIds] = useState<Set<string>>(new Set());
 
     const { fetchAirdropCount, fetchAirdrop, checkClaimed, claimAirdrop, loading, error } = useDropOp();
 
-    // Auto-scan for claimable airdrops when wallet connects
     const scan = useCallback(async () => {
         if (!dropOpAddress || !walletAddress) return;
         setScanning(true);
@@ -67,24 +63,14 @@ export function ClaimPage({ network, dropOpAddress, walletAddress, isConnected, 
         }
     }, [isConnected, walletAddress, dropOpAddress, scan]);
 
-    const handleManualClaim = async () => {
+    const handleClaim = async (info: AirdropInfo) => {
         if (!walletAddress || !dropOpAddress) return;
-        setManualError(null);
+        setClaimError(null);
         setClaimSuccess(null);
 
-        const airdropId = BigInt(manualId);
-
-        // Parse recipient list to generate proof
         const lines = recipientList.trim().split(/\r?\n/).filter((l) => l.trim());
         if (lines.length === 0) {
-            setManualError('Paste the recipient list (address, amount per line) to generate your merkle proof.');
-            return;
-        }
-
-        // Fetch airdrop info for decimals
-        const info = await fetchAirdrop(dropOpAddress, airdropId, network);
-        if (!info) {
-            setManualError('Airdrop not found.');
+            setClaimError('Paste the recipient list shared by the airdrop creator.');
             return;
         }
 
@@ -96,20 +82,18 @@ export function ClaimPage({ network, dropOpAddress, walletAddress, isConnected, 
         }
 
         if (recipients.length === 0) {
-            setManualError('Could not parse any recipients from the list.');
+            setClaimError('Could not parse any recipients from the list.');
             return;
         }
 
-        // Find claimer in list
         const match = recipients.find(
             (r) => r.address.toLowerCase() === walletAddress.toLowerCase(),
         );
         if (!match) {
-            setManualError('Your address was not found in the recipient list.');
+            setClaimError('Your address is not in this recipient list. You may not be eligible for this airdrop.');
             return;
         }
 
-        // Build merkle tree and generate proof
         const leaves = recipients.map((r) => {
             const amt = amountToSmallestUnit(r.amount, info.decimals);
             return hashLeaf(r.address, amt);
@@ -122,23 +106,20 @@ export function ClaimPage({ network, dropOpAddress, walletAddress, isConnected, 
         try {
             proof = getMerkleProof(leaves, leaf);
         } catch {
-            setManualError('Could not generate merkle proof. The recipient list may not match this airdrop.');
+            setClaimError('Could not generate merkle proof. The recipient list may not match this airdrop.');
             return;
         }
 
-        setClaimingId(airdropId);
-        const success = await claimAirdrop(dropOpAddress, airdropId, claimAmount, proof, walletAddress, network);
-        setClaimingId(null);
+        const success = await claimAirdrop(dropOpAddress, info.id, claimAmount, proof, walletAddress, network);
 
         if (success) {
-            setClaimedIds((prev) => new Set(prev).add(airdropId.toString()));
-            setClaimSuccess(`Claimed ${formatTokenAmount(claimAmount, info.decimals)} tokens from Airdrop #${airdropId}!`);
+            setClaimedIds((prev) => new Set(prev).add(info.id.toString()));
+            setClaimSuccess(`Claimed ${formatTokenAmount(claimAmount, info.decimals)} tokens from Airdrop #${info.id}!`);
             setRecipientList('');
-            setManualId('');
+            setExpandedId(null);
         }
     };
 
-    // Not connected
     if (!isConnected) {
         return (
             <div className="page">
@@ -147,11 +128,11 @@ export function ClaimPage({ network, dropOpAddress, walletAddress, isConnected, 
                     <h1 style={{ fontSize: 28, fontWeight: 700 }}>Claim Tokens</h1>
                 </div>
                 <p style={{ color: 'var(--text-muted)', fontSize: 14, marginBottom: 24 }}>
-                    Connect your wallet to see what you can claim.
+                    Connect your wallet to see available airdrops.
                 </p>
                 <div className="card" style={{ textAlign: 'center', padding: 48 }}>
                     <p style={{ color: 'var(--text-secondary)', marginBottom: 16 }}>
-                        We'll automatically find any airdrops available for your address.
+                        We'll scan for active claim pools you can collect from.
                     </p>
                     <button className="btn btn-primary btn-lg" onClick={onConnect}>
                         Connect Wallet
@@ -170,7 +151,7 @@ export function ClaimPage({ network, dropOpAddress, walletAddress, isConnected, 
                         <h1 style={{ fontSize: 28, fontWeight: 700 }}>Claim Tokens</h1>
                     </div>
                     <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>
-                        Claim your share from merkle airdrops.
+                        Active airdrops on this network. Expand one to claim your share.
                     </p>
                 </div>
                 <button className="btn btn-secondary btn-sm" onClick={scan} disabled={scanning}>
@@ -181,91 +162,95 @@ export function ClaimPage({ network, dropOpAddress, walletAddress, isConnected, 
             {error && <Alert type="error">{error}</Alert>}
             {claimSuccess && <Alert type="success" onDismiss={() => setClaimSuccess(null)}>{claimSuccess}</Alert>}
 
-            {/* Manual Claim Card */}
-            <div className="card">
-                <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>Claim by Airdrop ID</div>
-                <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
-                    Enter the airdrop ID and paste the recipient list shared by the airdrop creator.
-                </p>
-
-                {manualError && <Alert type="error">{manualError}</Alert>}
-
-                <div className="two-col">
-                    <div className="input-group">
-                        <label className="input-label">Airdrop ID</label>
-                        <input
-                            className="input"
-                            placeholder="0"
-                            value={manualId}
-                            onChange={(e) => setManualId(e.target.value.replace(/[^0-9]/g, ''))}
-                        />
-                    </div>
-                </div>
-
-                <div className="input-group">
-                    <label className="input-label">Recipient List (address, amount per line)</label>
-                    <textarea
-                        className="input"
-                        placeholder={`Paste the full recipient list here:\n0x1234...abcd, 100\n0x5678...efgh, 250`}
-                        value={recipientList}
-                        onChange={(e) => setRecipientList(e.target.value)}
-                        rows={5}
-                    />
-                    <p className="input-hint">
-                        The creator shares this list. Your merkle proof is computed locally.
+            {scanning ? (
+                <Spinner text="Scanning for active airdrops..." />
+            ) : airdrops.length === 0 ? (
+                <div className="card" style={{ textAlign: 'center', padding: 48 }}>
+                    <p style={{ color: 'var(--text-secondary)' }}>
+                        No active claim pools found on this network.
                     </p>
                 </div>
+            ) : (
+                airdrops.map(({ info, alreadyClaimed }) => {
+                    const isClaimed = alreadyClaimed || claimedIds.has(info.id.toString());
+                    const isExpanded = expandedId === info.id.toString();
+                    const pct = info.totalAmount > 0n
+                        ? Number((info.claimedAmount * 10000n) / info.totalAmount) / 100
+                        : 0;
+                    const remaining = info.totalAmount - info.claimedAmount;
 
-                <button
-                    className="btn btn-success btn-full"
-                    disabled={!manualId || !recipientList.trim() || loading}
-                    onClick={handleManualClaim}
-                >
-                    {claimingId !== null ? (
-                        <>
-                            <span className="spinner" style={{ width: 14, height: 14 }} />
-                            Claiming...
-                        </>
-                    ) : 'Claim'}
-                </button>
-            </div>
-
-            {/* Active Claim Pools */}
-            {scanning ? (
-                <Spinner text="Scanning for airdrops..." />
-            ) : airdrops.length > 0 && (
-                <div>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 12, marginTop: 8 }}>
-                        Active Claim Pools
-                    </div>
-                    {airdrops.map(({ info, alreadyClaimed }) => {
-                        const isClaimed = alreadyClaimed || claimedIds.has(info.id.toString());
-                        const pct = info.totalAmount > 0n
-                            ? Number((info.claimedAmount * 10000n) / info.totalAmount) / 100
-                            : 0;
-
-                        return (
-                            <div key={info.id.toString()} className="card">
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                                    <div>
-                                        <div style={{ fontSize: 16, fontWeight: 600 }}>
-                                            Airdrop #{info.id.toString()}
-                                        </div>
-                                        <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-                                            Pool: {formatTokenAmount(info.totalAmount, info.decimals)} tokens
-                                        </div>
+                    return (
+                        <div key={info.id.toString()} className="card" style={{ marginBottom: 12 }}>
+                            <div
+                                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: isClaimed ? 'default' : 'pointer' }}
+                                onClick={() => {
+                                    if (isClaimed) return;
+                                    setExpandedId(isExpanded ? null : info.id.toString());
+                                    setClaimError(null);
+                                    setRecipientList('');
+                                }}
+                            >
+                                <div>
+                                    <div style={{ fontSize: 16, fontWeight: 600 }}>
+                                        Airdrop #{info.id.toString()}
                                     </div>
+                                    <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 2 }}>
+                                        {formatTokenAmount(remaining, info.decimals)} remaining of {formatTokenAmount(info.totalAmount, info.decimals)}
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                     {isClaimed ? (
                                         <span className="badge badge-completed">Claimed</span>
                                     ) : (
-                                        <span className="badge badge-active">Eligible</span>
+                                        <span className="badge badge-active">Open</span>
+                                    )}
+                                    {!isClaimed && (
+                                        <span style={{ fontSize: 18, color: 'var(--text-muted)', transition: 'transform 0.2s', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0)' }}>
+                                            ▾
+                                        </span>
                                     )}
                                 </div>
+                            </div>
+
+                            <div style={{ marginTop: 12 }}>
                                 <ProgressBar value={pct} label={`${info.claimedCount.toString()}/${info.recipientCount.toString()} claimed`} />
                             </div>
-                        );
-                    })}
-                </div>
+
+                            {isExpanded && !isClaimed && (
+                                <div style={{ marginTop: 16, borderTop: '1px solid var(--glass-border)', paddingTop: 16 }}>
+                                    {claimError && <Alert type="error">{claimError}</Alert>}
+
+                                    <div className="input-group">
+                                        <label className="input-label">Recipient List</label>
+                                        <textarea
+                                            className="input"
+                                            placeholder={`Paste the list the creator shared with you:\nopt1abc..., 100\nopt1def..., 250`}
+                                            value={recipientList}
+                                            onChange={(e) => setRecipientList(e.target.value)}
+                                            rows={4}
+                                        />
+                                        <p className="input-hint">
+                                            Your proof is computed locally in your browser — never sent anywhere.
+                                        </p>
+                                    </div>
+
+                                    <button
+                                        className="btn btn-success btn-full"
+                                        disabled={!recipientList.trim() || loading}
+                                        onClick={() => handleClaim(info)}
+                                    >
+                                        {loading ? (
+                                            <>
+                                                <span className="spinner" style={{ width: 14, height: 14 }} />
+                                                Claiming...
+                                            </>
+                                        ) : 'Claim My Share'}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    );
+                })
             )}
         </div>
     );
