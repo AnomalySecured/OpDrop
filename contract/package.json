@@ -1,0 +1,17 @@
+{
+    "name": "opdrop-contract",
+    "version": "1.0.0",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "build": "npx asc --config asconfig.json --target opdrop",
+        "clean": "rm -rf build"
+    },
+    "dependencies": {
+        "@btc-vision/btc-runtime": "rc",
+        "@btc-vision/as-bignum": "latest",
+        "@btc-vision/assemblyscript": "latest",
+        "@btc-vision/opnet-transform": "latest",
+        "@assemblyscript/loader": "latest"
+    }
+}

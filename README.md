@@ -4,6 +4,10 @@ Token airdrop tool for [OPNet](https://opnet.org) — Bitcoin L1 smart contracts
 
 Drop tokens to hundreds of addresses in one click, or set up a merkle claim pool and let recipients come to you.
 
+**Live on IPFS:** [https://bafybeifaxxx3wdorgc5a2m4nztaxitkndsif564nv5pvmyggdvpemj6s7y.ipfs.dweb.link/](https://bafybeifaxxx3wdorgc5a2m4nztaxitkndsif564nv5pvmyggdvpemj6s7y.ipfs.dweb.link/)
+
+**Contract (OPNet Testnet):** `opt1sqqytmrzdehfwsdld55k98efp37cqc6mcjc5sx08k`
+
 ---
 
 ## What It Does

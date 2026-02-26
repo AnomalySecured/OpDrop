@@ -143,7 +143,7 @@ export function ClaimPage({ network, dropOpAddress, walletAddress, isConnected, 
         return (
             <div className="page">
                 <div className="page-title-row">
-                    <span className="page-title-logo">Drop<span>Op</span></span>
+                    <span className="page-title-logo">Op<span>Drop</span></span>
                     <h1 style={{ fontSize: 28, fontWeight: 700 }}>Claim Tokens</h1>
                 </div>
                 <p style={{ color: 'var(--text-muted)', fontSize: 14, marginBottom: 24 }}>
@@ -166,7 +166,7 @@ export function ClaimPage({ network, dropOpAddress, walletAddress, isConnected, 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
                 <div>
                     <div className="page-title-row">
-                        <span className="page-title-logo">Drop<span>Op</span></span>
+                        <span className="page-title-logo">Op<span>Drop</span></span>
                         <h1 style={{ fontSize: 28, fontWeight: 700 }}>Claim Tokens</h1>
                     </div>
                     <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>

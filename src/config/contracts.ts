@@ -6,7 +6,7 @@ export interface ContractAddresses {
 
 const CONTRACT_ADDRESSES: Map<Network, ContractAddresses> = new Map([
     [networks.opnetTestnet, {
-        dropOp: '', // Set after deployment
+        dropOp: 'opt1sqqytmrzdehfwsdld55k98efp37cqc6mcjc5sx08k',
     }],
     [networks.bitcoin, {
         dropOp: '', // Set after deployment

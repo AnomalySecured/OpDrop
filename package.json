@@ -15,7 +15,7 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.0.0",
-    "opnet": "latest",
+    "opnet": "1.8.1-rc.12",
     "@btc-vision/bitcoin": "latest",
     "@btc-vision/transaction": "latest",
     "@btc-vision/walletconnect": "latest"
