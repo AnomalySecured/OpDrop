@@ -5,7 +5,7 @@ import { Alert } from '../components/common/Alert.js';
 import { Spinner } from '../components/common/Spinner.js';
 import { useDropOp } from '../hooks/useDropOp.js';
 import { formatTokenAmount } from '../utils/csv.js';
-import { resolveToPublicKey, resolveAllToPublicKeys, isHexPublicKey, type ResolvedAddress } from '../utils/address.js';
+import { resolveAllToPublicKeys, isHexPublicKey, type ResolvedAddress } from '../utils/address.js';
 
 interface SendPageProps {
     network: Network;
@@ -72,20 +72,8 @@ export function SendPage({ network, dropOpAddress, walletAddress, walletPublicKe
         setResolveError(null);
         setUnresolved([]);
 
-        // Step 0: Resolve the token address to a hex public key
+        // Resolve all recipient addresses to public keys
         setResolving(true);
-        const tokenResolved = await resolveToPublicKey(tokenAddress, network);
-        if (!tokenResolved.publicKey) {
-            setResolveError(
-                tokenResolved.error ||
-                `Token address "${tokenAddress}" could not be resolved to a hex public key. Enter it as 0x...`,
-            );
-            setResolving(false);
-            return;
-        }
-        const resolvedTokenAddress = tokenResolved.publicKey;
-
-        // Step 1: Resolve all recipient addresses to public keys
         let resolved: ResolvedAddress[];
         try {
             resolved = await resolveAllToPublicKeys(uniqueAddresses, network);
@@ -121,7 +109,7 @@ export function SendPage({ network, dropOpAddress, walletAddress, walletPublicKe
             amount: amountEach,
         }));
 
-        await doSend(resolvedTokenAddress, finalRecipients);
+        await doSend(finalRecipients);
     };
 
     const handleSendWithManualKeys = async () => {
@@ -141,20 +129,8 @@ export function SendPage({ network, dropOpAddress, walletAddress, walletPublicKe
             }
         }
 
-        // Resolve token address
-        setResolving(true);
-        const tokenResolved = await resolveToPublicKey(tokenAddress, network);
-        if (!tokenResolved.publicKey) {
-            setResolveError(
-                tokenResolved.error ||
-                `Token address "${tokenAddress}" could not be resolved. Enter it as 0x...`,
-            );
-            setResolving(false);
-            return;
-        }
-        const resolvedTokenAddress = tokenResolved.publicKey;
-
         // Re-resolve recipients, substituting manual keys for failures
+        setResolving(true);
         let resolved: ResolvedAddress[];
         try {
             resolved = await resolveAllToPublicKeys(uniqueAddresses, network);
@@ -181,15 +157,15 @@ export function SendPage({ network, dropOpAddress, walletAddress, walletPublicKe
 
         setUnresolved([]);
         setResolveError(null);
-        await doSend(resolvedTokenAddress, finalRecipients);
+        await doSend(finalRecipients);
     };
 
-    const doSend = async (resolvedToken: string, recipients: { address: string; amount: string }[]) => {
+    const doSend = async (recipients: { address: string; amount: string }[]) => {
         let result: bigint | null = null;
         if (mode === AirdropMode.DIRECT) {
-            result = await createDirectAirdrop(dropOpAddress, resolvedToken, recipients, decimals, walletAddress!, network);
+            result = await createDirectAirdrop(dropOpAddress, tokenAddress, recipients, decimals, walletAddress!, network);
         } else {
-            result = await createClaimAirdrop(dropOpAddress, resolvedToken, recipients, decimals, walletAddress!, network);
+            result = await createClaimAirdrop(dropOpAddress, tokenAddress, recipients, decimals, walletAddress!, network);
         }
 
         if (result !== null) {
