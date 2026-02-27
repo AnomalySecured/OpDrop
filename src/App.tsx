@@ -69,6 +69,7 @@ export function App() {
                     network={network}
                     dropOpAddress={dropOpAddress}
                     walletAddress={wallet.address}
+                    walletPublicKey={wallet.publicKey}
                     isConnected={wallet.isConnected}
                     onConnect={wallet.connect}
                 />
@@ -78,6 +79,7 @@ export function App() {
                     network={network}
                     dropOpAddress={dropOpAddress}
                     walletAddress={wallet.address}
+                    walletPublicKey={wallet.publicKey}
                     isConnected={wallet.isConnected}
                     onConnect={wallet.connect}
                 />

@@ -9,11 +9,13 @@ import { hashLeaf, getMerkleProof } from '../utils/merkle.js';
 import { amountToSmallestUnit } from '../utils/csv.js';
 import type { AirdropInfo, AirdropRecipient } from '../types/index.js';
 import { AirdropMode, AirdropStatus } from '../types/index.js';
+import { resolveAllToPublicKeys, isHexPublicKey } from '../utils/address.js';
 
 interface ClaimPageProps {
     network: Network;
     dropOpAddress: string;
     walletAddress: string | null;
+    walletPublicKey: string | null;
     isConnected: boolean;
     onConnect: () => void;
 }
@@ -23,7 +25,7 @@ interface ClaimableAirdrop {
     alreadyClaimed: boolean;
 }
 
-export function ClaimPage({ network, dropOpAddress, walletAddress, isConnected, onConnect }: ClaimPageProps) {
+export function ClaimPage({ network, dropOpAddress, walletAddress, walletPublicKey, isConnected, onConnect }: ClaimPageProps) {
     const [airdrops, setAirdrops] = useState<ClaimableAirdrop[]>([]);
     const [scanning, setScanning] = useState(false);
     const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -31,8 +33,14 @@ export function ClaimPage({ network, dropOpAddress, walletAddress, isConnected, 
     const [claimError, setClaimError] = useState<string | null>(null);
     const [claimSuccess, setClaimSuccess] = useState<string | null>(null);
     const [claimedIds, setClaimedIds] = useState<Set<string>>(new Set());
+    const [resolving, setResolving] = useState(false);
 
     const { fetchAirdropCount, fetchAirdrop, checkClaimed, claimAirdrop, loading, error } = useDropOp();
+
+    // The public key to use for matching. Must be hex format.
+    const myPublicKey = walletPublicKey
+        ? (walletPublicKey.startsWith('0x') ? walletPublicKey : `0x${walletPublicKey}`)
+        : null;
 
     const scan = useCallback(async () => {
         if (!dropOpAddress || !walletAddress) return;
@@ -68,39 +76,78 @@ export function ClaimPage({ network, dropOpAddress, walletAddress, isConnected, 
         setClaimError(null);
         setClaimSuccess(null);
 
+        if (!myPublicKey) {
+            setClaimError('Wallet did not provide a public key. Please reconnect your wallet.');
+            return;
+        }
+
         const lines = recipientList.trim().split(/\r?\n/).filter((l) => l.trim());
         if (lines.length === 0) {
             setClaimError('Paste the recipient list shared by the airdrop creator.');
             return;
         }
 
-        const recipients: AirdropRecipient[] = [];
+        const rawRecipients: AirdropRecipient[] = [];
         for (const line of lines) {
             const parts = line.split(/[,\s\t]+/).filter(Boolean);
             if (parts.length < 2) continue;
-            recipients.push({ address: parts[0].trim(), amount: parts[1].trim() });
+            rawRecipients.push({ address: parts[0].trim(), amount: parts[1].trim() });
         }
 
-        if (recipients.length === 0) {
+        if (rawRecipients.length === 0) {
             setClaimError('Could not parse any recipients from the list.');
             return;
         }
 
+        // Resolve all addresses to public keys
+        setResolving(true);
+        const rawAddresses = rawRecipients.map((r) => r.address);
+        let resolvedKeys: string[];
+        try {
+            const resolved = await resolveAllToPublicKeys(rawAddresses, network);
+            const failed = resolved.filter((r) => !r.publicKey);
+            if (failed.length > 0) {
+                setClaimError(
+                    `Could not resolve ${failed.length} address(es) to public keys: ${failed.map((f) => f.original).join(', ')}. ` +
+                    'The recipient list must use hex public keys (0x...) or addresses that have on-chain activity.',
+                );
+                setResolving(false);
+                return;
+            }
+            resolvedKeys = resolved.map((r) => r.publicKey!);
+        } catch (err) {
+            setClaimError(err instanceof Error ? err.message : 'Failed to resolve addresses');
+            setResolving(false);
+            return;
+        }
+        setResolving(false);
+
+        // Build recipients with resolved public keys
+        const recipients: AirdropRecipient[] = rawRecipients.map((r, i) => ({
+            address: resolvedKeys[i],
+            amount: r.amount,
+        }));
+
+        // Find the current wallet in the list by matching public key
         const match = recipients.find(
-            (r) => r.address.toLowerCase() === walletAddress.toLowerCase(),
+            (r) => r.address.toLowerCase() === myPublicKey.toLowerCase(),
         );
         if (!match) {
-            setClaimError('Your address is not in this recipient list. You may not be eligible for this airdrop.');
+            setClaimError(
+                'Your public key is not in this recipient list. You may not be eligible for this airdrop. ' +
+                `Your public key: ${myPublicKey}`,
+            );
             return;
         }
 
+        // Build merkle leaves using resolved public keys
         const leaves = recipients.map((r) => {
             const amt = amountToSmallestUnit(r.amount, info.decimals);
             return hashLeaf(r.address, amt);
         });
 
         const claimAmount = amountToSmallestUnit(match.amount, info.decimals);
-        const leaf = hashLeaf(walletAddress, claimAmount);
+        const leaf = hashLeaf(myPublicKey, claimAmount);
 
         let proof: Uint8Array[];
         try {
@@ -158,6 +205,12 @@ export function ClaimPage({ network, dropOpAddress, walletAddress, isConnected, 
                     {scanning ? 'Scanning...' : 'Refresh'}
                 </button>
             </div>
+
+            {myPublicKey && (
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16, wordBreak: 'break-all' }}>
+                    Your public key: <code style={{ fontSize: 11 }}>{myPublicKey}</code>
+                </div>
+            )}
 
             {error && <Alert type="error">{error}</Alert>}
             {claimSuccess && <Alert type="success" onDismiss={() => setClaimSuccess(null)}>{claimSuccess}</Alert>}
@@ -224,22 +277,33 @@ export function ClaimPage({ network, dropOpAddress, walletAddress, isConnected, 
                                         <label className="input-label">Recipient List</label>
                                         <textarea
                                             className="input"
-                                            placeholder={`Paste the list the creator shared with you:\nopt1abc..., 100\nopt1def..., 250`}
+                                            placeholder={
+                                                'Paste the list the creator shared with you:\n' +
+                                                '0x020373626d317ae8..., 100\n' +
+                                                '0x03a1b2c3d4e5f6..., 250\n' +
+                                                'bc1q... addresses will be resolved to public keys'
+                                            }
                                             value={recipientList}
                                             onChange={(e) => setRecipientList(e.target.value)}
                                             rows={4}
                                         />
                                         <p className="input-hint">
-                                            Your proof is computed locally in your browser — never sent anywhere.
+                                            All addresses are resolved to hex public keys for merkle proof verification.
+                                            Your proof is computed locally in your browser.
                                         </p>
                                     </div>
 
                                     <button
                                         className="btn btn-success btn-full"
-                                        disabled={!recipientList.trim() || loading}
+                                        disabled={!recipientList.trim() || loading || resolving}
                                         onClick={() => handleClaim(info)}
                                     >
-                                        {loading ? (
+                                        {resolving ? (
+                                            <>
+                                                <span className="spinner" style={{ width: 14, height: 14 }} />
+                                                Resolving Addresses...
+                                            </>
+                                        ) : loading ? (
                                             <>
                                                 <span className="spinner" style={{ width: 14, height: 14 }} />
                                                 Claiming...
